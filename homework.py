@@ -3,7 +3,6 @@ import os
 import sys
 import time
 from logging.handlers import RotatingFileHandler
-from pprint import pprint
 
 import requests
 import telegram
@@ -71,8 +70,6 @@ def get_api_answer(timestamp):
         if homework_statuses.status_code != 200:
             raise ConnectionError('Ошибка подключения')
         response = homework_statuses.json()
-    pprint(timestamp)
-    pprint(response)
     return response
 
 
@@ -121,7 +118,6 @@ def main():
         try:
             response = get_api_answer(timestamp)
             timestamp = response.get('current_date')
-            pprint(timestamp)
             homework = check_response(response)
             while homework is None:
                 time.sleep(RETRY_PERIOD)
