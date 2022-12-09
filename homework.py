@@ -1,11 +1,19 @@
-...
+import logging
+import os
+import sys
+import time
+from logging.handlers import RotatingFileHandler
+from pprint import pprint
+
+import requests
+import telegram
+from dotenv import load_dotenv
 
 load_dotenv()
 
-
-PRACTICUM_TOKEN = ...
-TELEGRAM_TOKEN = ...
-TELEGRAM_CHAT_ID = ...
+PRACTICUM_TOKEN = os.getenv('PR_TOKEN')
+TELEGRAM_TOKEN = os.getenv('TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('CHAT')
 
 RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -18,48 +26,120 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = RotatingFileHandler(
+    'my_logger.log', maxBytes=50000000, backupCount=5
+)
+logger.addHandler(handler)
+
 
 def check_tokens():
-    ...
+    """Функция проверки доступности переменных окружения."""
+    if PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID is not None:
+        return True
+    return False
 
 
 def send_message(bot, message):
-    ...
+    """Функция отпраки сообщений."""
+    logger.debug('Начало отправки сообщения')
+    try:
+        bot.send_message(TELEGRAM_CHAT_ID, message)
+    except Exception as error:
+        logger.error('Сообщение не отправлено')
+        raise Exception(error)
+    else:
+        logging.debug('Сообщение отправлено')
 
 
 def get_api_answer(timestamp):
-    ...
+    """Функция запроса к эндпоинту."""
+    try:
+        params = {'from_date': timestamp}
+        homework_statuses = requests.get(
+            ENDPOINT, headers=HEADERS, params=params
+        )
+    except requests.RequestException as error:
+        logger.error('requestexeption')
+        raise Exception(error)
+    else:
+        if homework_statuses.status_code != 200:
+            raise ConnectionError('Ошибка подключения')
+        response = homework_statuses.json()
+    pprint(timestamp)
+    pprint(response)
+    return response
 
 
 def check_response(response):
-    ...
+    """Функция проверки типа данных."""
+    if not isinstance(response, dict):
+        raise TypeError('Ответ не словарь')
+    if not isinstance(response.get('homeworks'), list):
+        raise TypeError('Ответ не список')
+    if response.get('homeworks') is None:
+        raise KeyError('Нет ключа homeworks')
+    if not response.get('homeworks'):
+        logger.debug('Статус работы не изменился')
+    if len(response.get('homeworks')) == 0:
+        return None
+    return response.get('homeworks')[0]
 
 
 def parse_status(homework):
-    ...
-
+    """Функция для извлечения статуса домашней работы."""
+    if not homework:
+        raise KeyError('Статус не определен')
+    if homework.get('homework_name') is None:
+        raise KeyError('homework_name не найден')
+    homework_name = homework.get('homework_name')
+    homework_verdict = homework.get('status')
+    if homework_verdict not in HOMEWORK_VERDICTS:
+        raise KeyError('Статус не определен')
+    verdict = HOMEWORK_VERDICTS[homework_verdict]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
+    timestamp = 0
+    old_message = ''
 
-    ...
-
+    if check_tokens() is False:
+        logger.critical(
+            'отсутствие обязательных переменных окружения во время запуска'
+        )
+        sys.exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
-
-    ...
-
+    send_message(bot, 'Start')
     while True:
         try:
-
-            ...
+            response = get_api_answer(timestamp)
+            timestamp = response.get('current_date')
+            pprint(timestamp)
+            homework = check_response(response)
+            while homework is None:
+                time.sleep(RETRY_PERIOD)
+            message = parse_status(homework)
+            if message != old_message:
+                send_message(bot, message)
+                message = old_message
+            else:
+                if not send_message:
+                    logger.debug('Ответ не изменился')
+                else:
+                    raise ConnectionError('Ошибка подключения')
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            ...
-        ...
+            send_message(bot, message)
+            logger.error(error, exc_info=True)
+        time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
