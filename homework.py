@@ -25,10 +25,6 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO)
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = RotatingFileHandler(
@@ -37,9 +33,27 @@ handler = RotatingFileHandler(
 logger.addHandler(handler)
 
 
+class BotProjectError(Exception):
+    """Обработка ошибок."""
+
+    def __init__(self, *args):
+        """Конструктор класса."""
+        if args:
+            self.message = args[0]
+        else:
+            self.message = None
+
+    def __str__(self):
+        """Метод."""
+        print('calling str')
+        if self.message:
+            return 'BotProjectError, {0} '.format(self.message)
+        return 'BotProjectError has been raised'
+
+
 def check_tokens():
     """Функция проверки доступности переменных окружения."""
-    if PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID is not None:
+    if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)):
         return True
     return False
 
@@ -51,7 +65,7 @@ def send_message(bot, message):
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except Exception as error:
         logger.error('Сообщение не отправлено')
-        raise Exception(error)
+        raise BotProjectError(error)
     else:
         logging.debug('Сообщение отправлено')
 
@@ -65,7 +79,7 @@ def get_api_answer(timestamp):
         )
     except requests.RequestException as error:
         logger.error('requestexeption')
-        raise Exception(error)
+        raise BotProjectError(error)
     else:
         if homework_statuses.status_code != 200:
             raise ConnectionError('Ошибка подключения')
@@ -107,7 +121,7 @@ def main():
     timestamp = 0
     old_message = ''
 
-    if check_tokens() is False:
+    if not check_tokens():
         logger.critical(
             'отсутствие обязательных переменных окружения во время запуска'
         )
@@ -139,4 +153,8 @@ def main():
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
     main()
