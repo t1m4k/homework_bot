@@ -8,6 +8,8 @@ import requests
 import telegram
 from dotenv import load_dotenv
 
+import CustomErrors
+
 load_dotenv()
 
 PRACTICUM_TOKEN = os.getenv('PR_TOKEN')
@@ -17,6 +19,7 @@ TELEGRAM_CHAT_ID = os.getenv('CHAT')
 RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
+OK = 200
 
 
 HOMEWORK_VERDICTS = {
@@ -33,46 +36,9 @@ handler = RotatingFileHandler(
 logger.addHandler(handler)
 
 
-class GetApiAnswerError(Exception):
-    """Обработка ошибок."""
-
-    def __init__(self, *args):
-        """Конструктор класса."""
-        if args:
-            self.message = args[0]
-        else:
-            self.message = None
-
-    def __str__(self):
-        """Метод."""
-        if self.message:
-            return 'GetApiAnswerError, {0} '.format(self.message)
-        return 'GetApiAnswerError has been raised'
-
-
-class SendMessageError(Exception):
-    """Обработка ошибок."""
-
-    def __init__(self, *args):
-        """Конструктор класса."""
-        if args:
-            self.message = args[0]
-        else:
-            self.message = None
-
-    def __str__(self):
-        """Метод."""
-        if self.message:
-            return 'SendMessageError, {0} '.format(self.message)
-        return 'SendMessageError has been raised'
-
-
 def check_tokens():
     """Функция проверки доступности переменных окружения."""
-    if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)):
-        return True
-    logging.critical('отсутствие обязательных переменных')
-    return check_tokens()
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def send_message(bot, message):
@@ -82,7 +48,7 @@ def send_message(bot, message):
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except Exception as error:
         logger.error('Сообщение не отправлено')
-        raise SendMessageError(error)
+        raise CustomErrors.SendMessageError(error)
     else:
         logging.debug('Сообщение отправлено')
 
@@ -96,9 +62,9 @@ def get_api_answer(timestamp):
         )
     except requests.RequestException as error:
         logger.error('requestexeption')
-        raise GetApiAnswerError(error)
+        raise CustomErrors.GetApiAnswerError(error)
     else:
-        if homework_statuses.status_code != 200:
+        if homework_statuses.status_code != OK:
             raise ConnectionError('Ошибка подключения')
         response = homework_statuses.json()
     return response
@@ -139,6 +105,7 @@ def main():
     old_message = ''
 
     if not check_tokens():
+        logger.critical('отсутствие обязательных переменных')
         sys.exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     send_message(bot, 'Start')
