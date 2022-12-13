@@ -33,7 +33,7 @@ handler = RotatingFileHandler(
 logger.addHandler(handler)
 
 
-class BotProjectError(Exception):
+class GetApiAnswerError(Exception):
     """Обработка ошибок."""
 
     def __init__(self, *args):
@@ -45,17 +45,34 @@ class BotProjectError(Exception):
 
     def __str__(self):
         """Метод."""
-        print('calling str')
         if self.message:
-            return 'BotProjectError, {0} '.format(self.message)
-        return 'BotProjectError has been raised'
+            return 'GetApiAnswerError, {0} '.format(self.message)
+        return 'GetApiAnswerError has been raised'
+
+
+class SendMessageError(Exception):
+    """Обработка ошибок."""
+
+    def __init__(self, *args):
+        """Конструктор класса."""
+        if args:
+            self.message = args[0]
+        else:
+            self.message = None
+
+    def __str__(self):
+        """Метод."""
+        if self.message:
+            return 'SendMessageError, {0} '.format(self.message)
+        return 'SendMessageError has been raised'
 
 
 def check_tokens():
     """Функция проверки доступности переменных окружения."""
     if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)):
         return True
-    return False
+    logging.critical('отсутствие обязательных переменных')
+    return check_tokens()
 
 
 def send_message(bot, message):
@@ -65,7 +82,7 @@ def send_message(bot, message):
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except Exception as error:
         logger.error('Сообщение не отправлено')
-        raise BotProjectError(error)
+        raise SendMessageError(error)
     else:
         logging.debug('Сообщение отправлено')
 
@@ -79,7 +96,7 @@ def get_api_answer(timestamp):
         )
     except requests.RequestException as error:
         logger.error('requestexeption')
-        raise BotProjectError(error)
+        raise GetApiAnswerError(error)
     else:
         if homework_statuses.status_code != 200:
             raise ConnectionError('Ошибка подключения')
@@ -122,9 +139,6 @@ def main():
     old_message = ''
 
     if not check_tokens():
-        logger.critical(
-            'отсутствие обязательных переменных окружения во время запуска'
-        )
         sys.exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     send_message(bot, 'Start')
@@ -133,23 +147,25 @@ def main():
             response = get_api_answer(timestamp)
             timestamp = response.get('current_date')
             homework = check_response(response)
-            while homework is None:
-                time.sleep(RETRY_PERIOD)
-            message = parse_status(homework)
-            if message != old_message:
-                send_message(bot, message)
-                message = old_message
+            if homework is None:
+                logger.debug('Нет обновления')
             else:
-                if not send_message:
-                    logger.debug('Ответ не изменился')
+                message = parse_status(homework)
+                if message != old_message:
+                    send_message(bot, message)
+                    message = old_message
                 else:
-                    raise ConnectionError('Ошибка подключения')
+                    if not send_message:
+                        logger.debug('Ответ не изменился')
+                    else:
+                        raise ConnectionError('Ошибка подключения')
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             send_message(bot, message)
             logger.error(error, exc_info=True)
-        time.sleep(RETRY_PERIOD)
+        finally:
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
